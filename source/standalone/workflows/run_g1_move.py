@@ -6,6 +6,8 @@ from isaaclab.app import AppLauncher
 
 # Argumente parsen
 parser = argparse.ArgumentParser(description="Unitree G1 Arm Waving")
+parser.add_argument("--free-root", action="store_false", dest="fix_root", help="Nicht fixierte Basis (frei balancieren)")
+parser.set_defaults(fix_root=True)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -19,6 +21,7 @@ from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.sim import SimulationContext
+from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils import configclass
 
 # PFAD ZUR USD DATEI
@@ -38,7 +41,8 @@ class UnitreeG1Cfg(ArticulationCfg):
     
     # 3. Start-Status (Position etwas höher, damit er nicht im Boden steckt)
     init_state = ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.85),
+        # Spawn slightly above ground so feet settle without penetrating.
+        pos=(0.0, 0.0, 0.82),
     )
     
     # 4. Basis fixieren (Kein Umfallen)
@@ -54,66 +58,51 @@ class UnitreeG1Cfg(ArticulationCfg):
     }
 
 def main():
-    # Simulation Setup
-    sim_cfg = sim_utils.SimulationCfg(dt=0.01, device="cuda:0")
+    # Simulation Setup (tighter solver + less bounce)
+    sim_cfg = sim_utils.SimulationCfg(
+        dt=1.0 / 120.0,
+        device="cuda:0",
+        physx=sim_utils.PhysxCfg(
+            min_position_iteration_count=8,
+            min_velocity_iteration_count=1,
+            enable_stabilization=True,
+            bounce_threshold_velocity=0.0,
+        ),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="min",
+            static_friction=1.0,
+            dynamic_friction=0.9,
+            restitution=0.0,
+        ),
+    )
     sim = SimulationContext(sim_cfg)
 
     # Szene
     scene_cfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
+
+    # Fester Boden unter dem Roboter (hohe Reibung, keine Elastizitaet)
+    spawn_ground_plane(
+        prim_path="/World/ground",
+        cfg=GroundPlaneCfg(
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                friction_combine_mode="multiply",
+                restitution_combine_mode="min",
+                static_friction=1.0,
+                dynamic_friction=0.9,
+                restitution=0.0,
+            )
+        ),
+    )
     
     # Roboter laden
-    robot_cfg = UnitreeG1Cfg()
+    robot_cfg = UnitreeG1Cfg(fix_root_link=args_cli.fix_root)
     robot = Articulation(cfg=robot_cfg)
     
     # --- HIER WAR DER TIPPFEHLER KORRIGIERT ---
     scene.articulations["g1"] = robot
     # ------------------------------------------
-
-    # Start
-    sim.reset()
-    print(f"[INFO] G1 geladen. Anzahl Gelenke: {robot.num_joints}")
-    
-    # Arm Indizes finden
-    arm_indices = [
-        i for i, n in enumerate(robot.joint_names) 
-        if "right" in n and ("shoulder" in n or "elbow" in n)
-    ]
-    print(f"[INFO] Arm Gelenke: {arm_indices}")
-
-    # Startposition merken
-    default_pos = robot.data.default_joint_pos.clone()
-    targets = default_pos.clone()
-    
-    sim_time = 0.0
-    while simulation_app.is_running():
-        sim_time += sim_cfg.dt
-        
-        # Winken
-        if len(arm_indices) > 0:
-            shoulder_idx = arm_indices[0]
-            targets[:, shoulder_idx] = default_pos[:, shoulder_idx] + 1.0 * torch.sin(torch.tensor(sim_time * 2.0))
-            
-            if len(arm_indices) > 2:
-                elbow_idx = arm_indices[2]
-                targets[:, elbow_idx] = default_pos[:, elbow_idx] + 0.5 * torch.sin(torch.tensor(sim_time * 3.0))
-
-        robot.set_joint_position_target(targets)
-        robot.write_data_to_sim()
-        sim.step()
-        scene.update(dt=sim_cfg.dt)
-    # Simulation Setup
-    sim_cfg = sim_utils.SimulationCfg(dt=0.01, device="cuda:0")
-    sim = SimulationContext(sim_cfg)
-
-    # Szene
-    scene_cfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0)
-    scene = InteractiveScene(scene_cfg)
-    
-    # Roboter laden
-    robot_cfg = UnitreeG1Cfg()
-    robot = Articulation(cfg=robot_cfg)
-    scene.articulatons["g1"] = robot
 
     # Start
     sim.reset()

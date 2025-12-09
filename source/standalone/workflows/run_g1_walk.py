@@ -4,6 +4,8 @@ from isaaclab.app import AppLauncher
 
 # Argumente parsen
 parser = argparse.ArgumentParser(description="Unitree G1 Dance Party")
+parser.add_argument("--free-root", action="store_false", dest="fix_root", help="Basis nicht fixieren (faellt leichter um)")
+parser.set_defaults(fix_root=True)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -17,6 +19,7 @@ from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.sim import SimulationContext
+from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils import configclass
 
 # ---------------------------------------------------------
@@ -38,7 +41,7 @@ class UnitreeG1Cfg(ArticulationCfg):
     
     # 3. Start-Position: Etwas höher (1.1m), damit die Beine Platz haben
     init_state = ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 1.1),
+        pos=(0.0, 0.0, 0.82),
     )
     
     # 4. Basis fixieren (WICHTIG: Sonst fällt er um)
@@ -54,14 +57,43 @@ class UnitreeG1Cfg(ArticulationCfg):
     }
 
 def main():
-    # Setup
-    sim_cfg = sim_utils.SimulationCfg(dt=0.01, device="cuda:0")
+    # Setup: stabilere Physik und fester Boden
+    sim_cfg = sim_utils.SimulationCfg(
+        dt=1.0 / 120.0,
+        device="cuda:0",
+        physx=sim_utils.PhysxCfg(
+            min_position_iteration_count=8,
+            min_velocity_iteration_count=1,
+            enable_stabilization=True,
+            bounce_threshold_velocity=0.0,
+        ),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="min",
+            static_friction=1.0,
+            dynamic_friction=0.9,
+            restitution=0.0,
+        ),
+    )
     sim = SimulationContext(sim_cfg)
     scene_cfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
+
+    spawn_ground_plane(
+        prim_path="/World/ground",
+        cfg=GroundPlaneCfg(
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                friction_combine_mode="multiply",
+                restitution_combine_mode="min",
+                static_friction=1.0,
+                dynamic_friction=0.9,
+                restitution=0.0,
+            )
+        ),
+    )
     
     # Roboter hinzufügen
-    robot_cfg = UnitreeG1Cfg()
+    robot_cfg = UnitreeG1Cfg(fix_root_link=args_cli.fix_root)
     robot = Articulation(cfg=robot_cfg)
     scene.articulations["g1"] = robot
 
@@ -100,21 +132,26 @@ def main():
         fast_wave = torch.sin(torch.tensor(sim_time * 6.0))  # Marschier-Tempo
         slow_wave = torch.sin(torch.tensor(sim_time * 3.0))  # Dreh-Tempo
 
+        # Wenn die Basis frei ist, etwas kleinere Amplituden, damit er nicht kippt
+        arm_amp = 0.8 if args_cli.fix_root else 0.4
+        hip_amp = 0.6 if args_cli.fix_root else 0.3
+        twist_amp = 0.3 if args_cli.fix_root else 0.15
+
         # 1. Arme schwingen (Gegenläufig: Links vor, Rechts zurück)
         if l_shoulder_indices:
-            targets[:, l_shoulder_indices[0]] = default_pos[:, l_shoulder_indices[0]] + 0.8 * fast_wave
+            targets[:, l_shoulder_indices[0]] = default_pos[:, l_shoulder_indices[0]] + arm_amp * fast_wave
         if r_shoulder_indices:
-            targets[:, r_shoulder_indices[0]] = default_pos[:, r_shoulder_indices[0]] - 0.8 * fast_wave
+            targets[:, r_shoulder_indices[0]] = default_pos[:, r_shoulder_indices[0]] - arm_amp * fast_wave
 
         # 2. Beine bewegen (Gegenläufig zu den Armen = wie beim Gehen)
         if l_hip_indices:
-            targets[:, l_hip_indices[0]] = default_pos[:, l_hip_indices[0]] - 0.6 * fast_wave
+            targets[:, l_hip_indices[0]] = default_pos[:, l_hip_indices[0]] - hip_amp * fast_wave
         if r_hip_indices:
-            targets[:, r_hip_indices[0]] = default_pos[:, r_hip_indices[0]] + 0.6 * fast_wave
+            targets[:, r_hip_indices[0]] = default_pos[:, r_hip_indices[0]] + hip_amp * fast_wave
 
         # 3. Oberkörper drehen (Twist)
         if waist_indices:
-            targets[:, waist_indices[0]] = 0.3 * slow_wave
+            targets[:, waist_indices[0]] = twist_amp * slow_wave
 
         # Befehl anwenden
         robot.set_joint_position_target(targets)
