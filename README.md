@@ -1,6 +1,6 @@
 # Unitree G1 Simulation mit NVIDIA Isaac Lab
 
-Dieses Repository enthaelt Workflows und Skripte, um den **Unitree G1** in **NVIDIA Isaac Sim** und **Isaac Lab** zu simulieren. Es deckt sowohl hartcodierte kinematische Bewegungen als auch Deep-Reinforcement-Learning-Setups für Lokomotion ab.
+Dieses Repository enthält Workflows und Skripte, um den **Unitree G1** in **NVIDIA Isaac Sim** und **Isaac Lab** zu simulieren. Es deckt sowohl hartcodierte kinematische Bewegungen als auch Deep-Reinforcement-Learning-Setups für Lokomotion ab.
 
 ## 📋 Projektüberblick
 
@@ -50,15 +50,18 @@ Schneller Gelenk-Check ohne Neuronale Netze.
     ```bash
     ./isaaclab.bat -p source/standalone/workflows/run_g1_move.py
     ```
-* **Dance Mode (Koordinationstest):**
+    Optional mit freier Basis:
     ```bash
-    ./isaaclab.bat -p source/standalone/workflows/run_g1_dance.py
+    ./isaaclab.bat -p source/standalone/workflows/run_g1_move.py --free-root
     ```
 
-Optional: Basis freigeben (kann umfallen)
-
+* **Walk/Dance Mode (Koordinationstest):**
     ```bash
-    ./isaaclab.bat -p source/standalone/workflows/run_g1_dance.py --free-root
+    ./isaaclab.bat -p source/standalone/workflows/run_g1_walk.py
+    ```
+    Optional mit freier Basis (kann umfallen):
+    ```bash
+    ./isaaclab.bat -p source/standalone/workflows/run_g1_walk.py --free-root
     ```
 
 ### 2. Reinforcement Learning (Training)
@@ -90,26 +93,26 @@ Hinweise:
 
 ## 📊 Ergebnisse & Beobachtungen
 
-Mehrere Trainingslaeufe von **30 Minuten bis 6 Stunden**.
+Mehrere Trainingsläufe von **30 Minuten bis 6 Stunden**.
 
 ### Physik-Check
-PhysX simuliert Gravitation, Kollision und Reibung korrekt. Das Fallen bestaetigt, dass der Roboter dynamisch ist (`fix_root_link=False`) und mit der Bodenebene interagiert.
+PhysX simuliert Gravitation, Kollision und Reibung korrekt. Das Fallen bestätigt, dass der Roboter dynamisch ist (`fix_root_link=False`) und mit der Bodenebene interagiert.
 
 ### Trainings-Herausforderungen
-Trotz 10.000 Iterationen und Domain Randomization kein stabiles Gangbild innerhalb von 6 Stunden. Das deckt sich mit aktüller Forschung: Humanoide Lokomotion braucht oft **mehrtaegiges Training** auf starker Hardware, bis eine robuste Policy entsteht.
+Trotz 10.000 Iterationen und Domain Randomization kein stabiles Gangbild innerhalb von 6 Stunden. Das deckt sich mit aktüller Forschung: Humanoide Lokomotion braucht oft **mehrtägiges Training** auf starker Hardware, bis eine robuste Policy entsteht.
 
 ## 📂 Dateiübersicht
 
-* `run_g1_move.py`: Kinematischer Basistest (Armbewegung).
-* `run_g1_dance.py`: Kinematische Koordination (Beine, Arme, Hüfte).
-* `run_g1_train.py`: PPO-Training mit Domain Randomization und Rewards.
-* `run_g1_play.py`: Inference-Skript zum Laden von `model.pt` und Anzeigen im Viewport.
-* `trained_g1_walk.py`: Abspielen eines TorchScript-Modells (`motion.pt`) mit Empfehlung `--num_envs 1`.
+* `run_g1_move.py`: Kinematischer Basistest (Armbewegung). Unterstützt `--free-root` für freie Basis.
+* `run_g1_walk.py`: Kinematische Koordination mit Dance-Bewegungen (Beine, Arme, Hüfte). Unterstützt `--free-root` für freie Basis.
+* `run_g1_train.py`: PPO-Training mit Domain Randomization und Rewards für Lokomotion.
+* `run_g1_play.py`: Inference-Skript zum Laden von trainierten `model_*.pt` Checkpoints aus dem Log-Verzeichnis.
+* `trained_g1_walk.py`: Abspielen eines TorchScript-Modells (`motion.pt`) mit Empfehlung `--num_envs 1`. Unterstützt `--model_path` Parameter.
 
 ## 🧩 Troubleshooting
 
 - "Failed to resolve extension dependencies" mit `isaacsim.asset.importer.urdf`:
-    - In `apps/isaaclab.python.kit` wurde die Abhaengigkeit auf `"isaacsim.asset.importer.urdf" = {version = "2.4.19", exact = true}` gesetzt, passend zur lokal verfügbaren Version.
+    - In `apps/isaaclab.python.kit` wurde die Abhängigkeit auf `"isaacsim.asset.importer.urdf" = {version = "2.4.19", exact = true}` gesetzt, passend zur lokal verfügbaren Version.
     - Danach erneut starten: `./isaaclab.bat -p <skript>`
 
 ## 📝 Lizenz
